@@ -1,23 +1,23 @@
 'use client'
 // src/app/admin/dashboard/page.tsx
 
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import {
   Shield, LogOut, Plus, Copy, Check, Users, Clock,
   CheckCircle, XCircle, Link2, Mail, User, ChevronDown,
-  RefreshCw
+  RefreshCw, FileText, Camera, Eye,
 } from 'lucide-react'
-import type { KYCRequest, GenerateLinkPayload } from '@/types'
+import type { KYCRequest, VerificationRecord, GenerateLinkPayload } from '@/types'
 
 function StatusBadge({ status }: { status: KYCRequest['status'] }) {
   const styles: Record<string, string> = {
-    pending: 'bg-yellow-500/15 text-yellow-400 border border-yellow-500/30',
+    pending:     'bg-yellow-500/15 text-yellow-400 border border-yellow-500/30',
     in_progress: 'bg-blue-500/15 text-blue-400 border border-blue-500/30',
-    completed: 'bg-green-500/15 text-green-400 border border-green-500/30',
-    failed: 'bg-red-500/15 text-red-400 border border-red-500/30',
-    expired: 'bg-gray-500/15 text-gray-400 border border-gray-500/30',
+    completed:   'bg-green-500/15 text-green-400 border border-green-500/30',
+    failed:      'bg-red-500/15 text-red-400 border border-red-500/30',
+    expired:     'bg-gray-500/15 text-gray-400 border border-gray-500/30',
   }
   return (
     <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium capitalize ${styles[status] || ''}`}>
@@ -26,31 +26,56 @@ function StatusBadge({ status }: { status: KYCRequest['status'] }) {
   )
 }
 
+function VerificationBadge({ status }: { status: VerificationRecord['verification_status'] }) {
+  const styles: Record<string, string> = {
+    pending:  'bg-yellow-500/15 text-yellow-400 border border-yellow-500/30',
+    approved: 'bg-green-500/15 text-green-400 border border-green-500/30',
+    rejected: 'bg-red-500/15 text-red-400 border border-red-500/30',
+  }
+  return (
+    <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium capitalize ${styles[status] || ''}`}>
+      {status}
+    </span>
+  )
+}
+
 export default function AdminDashboard() {
-  const router = useRouter()
+  const router  = useRouter()
   const supabase = createClient()
 
-  const [requests, setRequests] = useState<KYCRequest[]>([])
-  const [loading, setLoading] = useState(true)
-  const [generating, setGenerating] = useState(false)
+  const [requests,      setRequests]      = useState<KYCRequest[]>([])
+  const [verifications, setVerifications] = useState<Record<string, VerificationRecord>>({})
+  const [expandedId,    setExpandedId]    = useState<string | null>(null)
+  const [loading,       setLoading]       = useState(true)
+  const [generating,    setGenerating]    = useState(false)
   const [generatedLink, setGeneratedLink] = useState<string | null>(null)
-  const [copied, setCopied] = useState(false)
-  const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ first_name: '', last_name: '', email: '' })
-  const [formError, setFormError] = useState<string | null>(null)
+  const [copied,        setCopied]        = useState(false)
+  const [showForm,      setShowForm]      = useState(false)
+  const [form,          setForm]          = useState({ first_name: '', last_name: '', email: '' })
+  const [formError,     setFormError]     = useState<string | null>(null)
 
   const loadRequests = async () => {
-    const { data } = await supabase
+    setLoading(true)
+
+    const { data: reqData } = await supabase
       .from('kyc_requests')
       .select('*')
       .order('created_at', { ascending: false })
-    if (data) setRequests(data)
+    if (reqData) setRequests(reqData)
+
+    const { data: verData } = await supabase
+      .from('verification_records')
+      .select('*')
+    if (verData) {
+      const map: Record<string, VerificationRecord> = {}
+      verData.forEach((v: VerificationRecord) => { map[v.kyc_request_id] = v })
+      setVerifications(map)
+    }
+
     setLoading(false)
   }
 
-  useEffect(() => {
-    loadRequests()
-  }, [])
+  useEffect(() => { loadRequests() }, [])
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
@@ -64,10 +89,10 @@ export default function AdminDashboard() {
     setGeneratedLink(null)
 
     try {
-      const res = await fetch('/api/admin/generate-link', {
-        method: 'POST',
+      const res  = await fetch('/api/admin/generate-link', {
+        method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form as GenerateLinkPayload),
+        body:    JSON.stringify(form as GenerateLinkPayload),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to generate link')
@@ -90,10 +115,10 @@ export default function AdminDashboard() {
   }
 
   const stats = {
-    total: requests.length,
-    pending: requests.filter(r => r.status === 'pending').length,
+    total:     requests.length,
+    pending:   requests.filter(r => r.status === 'pending').length,
     completed: requests.filter(r => r.status === 'completed').length,
-    failed: requests.filter(r => r.status === 'failed').length,
+    failed:    requests.filter(r => r.status === 'failed').length,
   }
 
   return (
@@ -135,10 +160,10 @@ export default function AdminDashboard() {
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
         {[
-          { label: 'Total', value: stats.total, icon: Users, color: 'text-white' },
-          { label: 'Pending', value: stats.pending, icon: Clock, color: 'text-yellow-400' },
-          { label: 'Completed', value: stats.completed, icon: CheckCircle, color: 'text-green-400' },
-          { label: 'Failed', value: stats.failed, icon: XCircle, color: 'text-red-400' },
+          { label: 'Total',     value: stats.total,     icon: Users,        color: 'text-white' },
+          { label: 'Pending',   value: stats.pending,   icon: Clock,        color: 'text-yellow-400' },
+          { label: 'Completed', value: stats.completed, icon: CheckCircle,  color: 'text-green-400' },
+          { label: 'Failed',    value: stats.failed,    icon: XCircle,      color: 'text-red-400' },
         ].map(({ label, value, icon: Icon, color }) => (
           <div key={label} className="glass rounded-xl p-4">
             <div className="flex items-center justify-between mb-2">
@@ -287,26 +312,141 @@ export default function AdminDashboard() {
                   <th className="px-5 py-3">Email</th>
                   <th className="px-5 py-3 hidden sm:table-cell">Created</th>
                   <th className="px-5 py-3">Status</th>
+                  <th className="px-5 py-3"></th>
                 </tr>
               </thead>
               <tbody>
-                {requests.map((req, i) => (
-                  <tr
-                    key={req.id}
-                    className="border-t border-white/5 hover:bg-white/3 transition-colors"
-                  >
-                    <td className="px-5 py-3.5 text-sm text-white font-medium">
-                      {req.first_name} {req.last_name}
-                    </td>
-                    <td className="px-5 py-3.5 text-sm text-white/60">{req.email}</td>
-                    <td className="px-5 py-3.5 text-xs text-white/40 hidden sm:table-cell">
-                      {new Date(req.created_at).toLocaleDateString()}
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <StatusBadge status={req.status} />
-                    </td>
-                  </tr>
-                ))}
+                {requests.map((req) => {
+                  const ver        = verifications[req.id]
+                  const isExpanded = expandedId === req.id
+                  return (
+                    <React.Fragment key={req.id}>
+                      <tr className="border-t border-white/5 hover:bg-white/3 transition-colors">
+                        <td className="px-5 py-3.5 text-sm text-white font-medium">
+                          {req.first_name} {req.last_name}
+                        </td>
+                        <td className="px-5 py-3.5 text-sm text-white/60">{req.email}</td>
+                        <td className="px-5 py-3.5 text-xs text-white/40 hidden sm:table-cell">
+                          {new Date(req.created_at).toLocaleDateString()}
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <StatusBadge status={req.status} />
+                        </td>
+                        <td className="px-5 py-3.5">
+                          {ver && (
+                            <button
+                              onClick={() => setExpandedId(isExpanded ? null : req.id)}
+                              className="flex items-center gap-1 text-xs text-brand-400 hover:text-brand-300 transition-colors"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                              <span className="hidden sm:inline">{isExpanded ? 'Hide' : 'View'}</span>
+                              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+
+                      {isExpanded && ver && (
+                        <tr className="border-t border-white/5 bg-white/2">
+                          <td colSpan={5} className="px-5 py-5">
+                            <div className="space-y-4">
+
+                              {/* Verification meta */}
+                              <div className="flex flex-wrap items-center gap-3">
+                                <span className="text-xs text-white/40">Verification:</span>
+                                <VerificationBadge status={ver.verification_status} />
+                                {ver.document_type && (
+                                  <span className="text-xs text-white/50 capitalize bg-white/5 px-2 py-0.5 rounded-full">
+                                    {ver.document_type.replace('_', ' ')}
+                                  </span>
+                                )}
+                                {ver.country && (
+                                  <span className="text-xs text-white/50 bg-white/5 px-2 py-0.5 rounded-full">
+                                    {ver.country}
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* OCR Data */}
+                              {ver.ocr_data_json && (
+                                <div className="bg-white/5 rounded-xl p-4">
+                                  <div className="flex items-center gap-2 mb-3">
+                                    <FileText className="w-3.5 h-3.5 text-brand-400" />
+                                    <span className="text-xs font-semibold text-white/70">Extracted Data (OCR)</span>
+                                  </div>
+                                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                    {ver.ocr_data_json.name && (
+                                      <div>
+                                        <div className="text-xs text-white/30 mb-0.5">Name</div>
+                                        <div className="text-sm text-white">{ver.ocr_data_json.name}</div>
+                                      </div>
+                                    )}
+                                    {ver.ocr_data_json.dob && (
+                                      <div>
+                                        <div className="text-xs text-white/30 mb-0.5">Date of Birth</div>
+                                        <div className="text-sm text-white">{ver.ocr_data_json.dob}</div>
+                                      </div>
+                                    )}
+                                    {ver.ocr_data_json.document_number && (
+                                      <div>
+                                        <div className="text-xs text-white/30 mb-0.5">Document No.</div>
+                                        <div className="text-sm text-white font-mono">{ver.ocr_data_json.document_number}</div>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Document images */}
+                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                {ver.document_front_url && (
+                                  <a href={ver.document_front_url} target="_blank" rel="noopener noreferrer" className="group">
+                                    <div className="text-xs text-white/40 mb-1.5 flex items-center gap-1">
+                                      <FileText className="w-3 h-3" /> Document Front
+                                    </div>
+                                    <img
+                                      src={ver.document_front_url}
+                                      alt="Document Front"
+                                      className="w-full h-28 object-cover rounded-lg border border-white/10 group-hover:border-brand-500/50 transition-colors"
+                                    />
+                                  </a>
+                                )}
+                                {ver.document_back_url && (
+                                  <a href={ver.document_back_url} target="_blank" rel="noopener noreferrer" className="group">
+                                    <div className="text-xs text-white/40 mb-1.5 flex items-center gap-1">
+                                      <FileText className="w-3 h-3" /> Document Back
+                                    </div>
+                                    <img
+                                      src={ver.document_back_url}
+                                      alt="Document Back"
+                                      className="w-full h-28 object-cover rounded-lg border border-white/10 group-hover:border-brand-500/50 transition-colors"
+                                    />
+                                  </a>
+                                )}
+                                {ver.selfie_url && (
+                                  <a href={ver.selfie_url} target="_blank" rel="noopener noreferrer" className="group">
+                                    <div className="text-xs text-white/40 mb-1.5 flex items-center gap-1">
+                                      <Camera className="w-3 h-3" /> Selfie
+                                    </div>
+                                    <img
+                                      src={ver.selfie_url}
+                                      alt="Selfie"
+                                      className="w-full h-28 object-cover rounded-lg border border-white/10 group-hover:border-brand-500/50 transition-colors"
+                                    />
+                                  </a>
+                                )}
+                              </div>
+
+                              <div className="text-xs text-white/25">
+                                Submitted: {new Date(ver.created_at).toLocaleString()}
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  )
+                })}
               </tbody>
             </table>
           </div>
