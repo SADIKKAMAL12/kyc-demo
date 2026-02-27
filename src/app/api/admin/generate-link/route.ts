@@ -48,7 +48,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to create KYC request' }, { status: 500 })
     }
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+    // Use the request's own origin — always correct for any deployment domain
+    const appUrl = request.nextUrl.origin
     const link = `${appUrl}/kyc/verify?token=${token}`
 
     return NextResponse.json({
